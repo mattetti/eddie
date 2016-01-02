@@ -106,7 +106,7 @@ func main() {
 					}
 					lastFailedPos = 0
 					lastFailed = ""
-				} else if wCounter > 10 {
+				} else if wCounter > 9 {
 					wCounter = 0
 					sentence := randSentence()
 					if err := screen.Write(sentence); err != nil {
@@ -147,10 +147,11 @@ func main() {
 		screen.SetCustomChar(4, i2c.CustomLCDChars["í"])
 		screen.SetCustomChar(5, i2c.CustomLCDChars["á"])
 		screen.SetCustomChar(6, i2c.CustomLCDChars["smiley"])
-		screen.SetCustomChar(7, i2c.CustomLCDChars["ú"])
+		// bug, should be ú, not ù will need to send a PR to gobot
+		screen.SetCustomChar(7, i2c.CustomLCDChars["ù"])
 		screen.Clear()
 		screen.SetRGB(20, 255, 0)
-		screen.Write(fmt.Sprintf("Hola Giana %s\nHave fun!  %s", string(byte(0)), string(byte(6))))
+		screen.Write(fmt.Sprintf("Hola Giana %s\nDivertirse!  %s", string(byte(0)), string(byte(6))))
 		gobot.On(button.Event("push"), func(data interface{}) {
 			wCounter++
 			fmt.Printf("Position: %d", wCounter)
@@ -238,7 +239,11 @@ func randSentence() string {
 		}
 		newSentence = append(newSentence, b)
 	}
-	return string(newSentence)
+	s := string(newSentence)
+	if len(s) > 16 {
+		s = s[:15] + "\n" + s[15:]
+	}
+	return s
 }
 
 var words = []string{
