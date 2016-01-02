@@ -11,6 +11,7 @@ rotary: A0
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"math/rand"
@@ -30,64 +31,39 @@ func init() {
 }
 
 var (
-	curWord      string
-	specialChars = map[string]int{
+	levelFlag     = flag.Int("level", 0, "word/sentence level")
+	curWord       string
+	lastFailed    string
+	lastFailedPos int
+	wCounter      int
+	specialChars  = map[string]int{
 		"é": 1,
 		"ñ": 2,
 		"ó": 3,
 		"í": 4,
 		"á": 5,
-	}
-
-	words = []string{
-		"qué",
-		"yo",
-		"mi",
-		"mis",
-		"una",
-		"un",
-		"ver",
-		"hacer",
-		"jugar",
-		"puedo",
-		"puedes",
-		"tiburón",
-		"camello",
-		"cebra",
-		"hiena",
-		"gorilla",
-		"muchos",
-		"hipopótamo",
-		"animales",
-		"columpios",
-		"carritos",
-		"pelota",
-		"escondidas",
-		"patín",
-		"contigo",
-		"tobogán",
-		"en",
-		"a",
-		"el",
-		"las",
-		"los",
-		"con",
+		"ú": 7,
 	}
 )
 
 func main() {
+	flag.Parse()
 	gbot := gobot.NewGobot()
 
 	// board := edison.NewEdisonAdaptor("edison")
 	board := firmata.NewFirmataAdaptor("arduino", "/dev/cu.usbmodem1411")
 
-	// button connected to D2
+	// button connected to D7
 	button := gpio.NewButtonDriver(board, "button", "7")
+	// touch button D2
+	touch := gpio.NewButtonDriver(board, "touch", "2")
 	// screen connected to any of the I2C ports
 	screen := i2c.NewGroveLcdDriver(board, "screen")
 	// rotary angle sensor on A0
-	rot := gpio.NewGroveRotaryDriver(board, "rotary", "1")
+	rot := gpio.NewGroveRotaryDriver(board, "rotary", "2")
 	rand.Seed(time.Now().UnixNano())
+
+	redLed := gpio.NewLedDriver(board, "red", "8")
 
 	displayQ := make(chan bool)
 	quitQ := make(chan bool)
@@ -124,13 +100,27 @@ func main() {
 				screen.SetRGB(rand.Intn(256), rand.Intn(256), rand.Intn(256))
 				screen.Home()
 				screen.Clear()
-				w := curWord
-				for w == curWord {
-					w = randWord()
-				}
-				curWord = w
-				if err := screen.Write(w); err != nil {
-					log.Fatal(err)
+				if lastFailed != "" && wCounter == lastFailedPos {
+					if err := screen.Write(lastFailed); err != nil {
+						log.Fatal(err)
+					}
+					lastFailedPos = 0
+					lastFailed = ""
+				} else if wCounter > 10 {
+					wCounter = 0
+					sentence := randSentence()
+					if err := screen.Write(sentence); err != nil {
+						log.Fatal(err)
+					}
+				} else {
+					w := randWord()
+					for w == curWord {
+						w = randWord()
+					}
+					curWord = w
+					if err := screen.Write(w); err != nil {
+						log.Fatal(err)
+					}
 				}
 				i++
 				displaying = true
@@ -157,13 +147,27 @@ func main() {
 		screen.SetCustomChar(4, i2c.CustomLCDChars["í"])
 		screen.SetCustomChar(5, i2c.CustomLCDChars["á"])
 		screen.SetCustomChar(6, i2c.CustomLCDChars["smiley"])
-		screen.SetCustomChar(7, i2c.CustomLCDChars["frownie"])
+		screen.SetCustomChar(7, i2c.CustomLCDChars["ú"])
 		screen.Clear()
 		screen.SetRGB(20, 255, 0)
 		screen.Write(fmt.Sprintf("Hola Giana %s\nHave fun!  %s", string(byte(0)), string(byte(6))))
 		gobot.On(button.Event("push"), func(data interface{}) {
-			fmt.Println("Next!")
+			wCounter++
+			fmt.Printf("Position: %d", wCounter)
+			if lastFailed == "" {
+				fmt.Println()
+			} else {
+				fmt.Printf(" last failed: %s [%d]\n", lastFailed, lastFailedPos)
+			}
 			displayQ <- true
+			redLed.Off()
+		})
+
+		gobot.On(touch.Event("push"), func(data interface{}) {
+			lastFailed = curWord
+			lastFailedPos = wCounter
+			screen.SetRGB(rand.Intn(256), rand.Intn(256), rand.Intn(256))
+			redLed.On()
 		})
 
 		gobot.On(rot.Event("data"), func(data interface{}) {
@@ -187,7 +191,7 @@ func main() {
 
 	robot := gobot.NewRobot("Eddie",
 		[]gobot.Connection{board},
-		[]gobot.Device{button, screen, rot},
+		[]gobot.Device{button, screen, touch, redLed, rot},
 		work,
 	)
 
@@ -220,4 +224,277 @@ func randWord() string {
 		newWord = append(newWord, b)
 	}
 	return string(newWord)
+}
+
+func randSentence() string {
+	sentence := sentences[rand.Intn(len(sentences))]
+	newSentence := []byte{}
+	for _, r := range sentence {
+		var b byte
+		if pos, ok := specialChars[string(r)]; ok {
+			b = byte(pos)
+		} else {
+			b = byte(r)
+		}
+		newSentence = append(newSentence, b)
+	}
+	return string(newSentence)
+}
+
+var words = []string{
+	"a",
+	"animales",
+	"amarillo",
+	"amarilla",
+	"ama",
+	"amo",
+	"anaranjada",
+	"anaranjado",
+	"abajo",
+	"al",
+	"azul",
+	"amigos",
+	"abeja",
+	"árbol",
+	"arbolito",
+	"adentro",
+	"Adrían",
+	"Adriana",
+	"Ariana",
+	"Arco iris",
+	"arriba",
+
+	"con",
+	"columpios",
+	"carritos",
+	"contigo",
+	"camello",
+	"cebra",
+	"chocolate",
+	"café",
+	"caer",
+	"cuatro",
+	"círculo",
+	"cuadrado",
+
+	"dos",
+	"del",
+	"debajo",
+
+	"escondidas",
+	"en",
+	"el",
+	"es",
+	"escoba",
+	"elefante",
+	"escalera",
+	"estrellas",
+	"escuela",
+	"enfermera",
+	"este",
+	"Exjani",
+	"Emma",
+
+	"gorilla",
+	"gato",
+	"gusta",
+	"que",
+
+	"hiena",
+	"hacer",
+	"hipopótamo",
+	"hoja",
+	"hasta",
+
+	"iguana",
+	"iguanas",
+	"iglú",
+	"insectos",
+	"isla",
+	"idea",
+	"igual",
+	"instrumento",
+
+	"jugar",
+
+	"la",
+	"las",
+	"los",
+	"libro",
+	"lo",
+
+	"mi",
+	"mí",
+	"mis",
+	"me",
+	"más",
+	"murciélago",
+	"muchos",
+	"mapa",
+	"manzana",
+	"mano",
+	"manos",
+	"mariposa",
+	"mango",
+	"muñeca",
+	"mono",
+	"mamá",
+	"Mireya",
+	"Marissa",
+	"Maren",
+	"Melina",
+
+	"negro",
+	"nariz",
+
+	"oso",
+	"ocho",
+	"oveja",
+	"ojo",
+	"once",
+	"oído",
+	"óvalo",
+	"oruga",
+	"ola",
+	"otoño",
+
+	"puedo",
+	"pelota",
+	"perro",
+	"pero",
+	"pelo",
+	"puedes",
+	"patín",
+	"pavo",
+	"pato",
+	"papá",
+	"papa",
+	"puma",
+	"pomo",
+	"payaso",
+	"pavo",
+	"pluma",
+
+	"qué",
+
+	"rana",
+	"roja",
+	"rojo",
+	"regalos",
+	"réctangulo",
+
+	"silla",
+	"suelo",
+	"sé",
+	"sombrero",
+
+	"tobogán",
+	"tiburón",
+	"tres",
+	"triángulo",
+	"tengo",
+	"traje",
+
+	"una",
+	"uña",
+	"uno",
+	"un",
+	"uvas",
+	"último",
+	"unicornio",
+	"universo",
+
+	"ver",
+	"verde",
+
+	"yo",
+
+	"zapatos",
+}
+
+var sentences = []string{
+	"Me gusta ver una rana.",
+	"Me gusta ver un perro.",
+	"Me gusta ver un gato.",
+	"Me gusta ver un oso.",
+	"Me gusta ver una silla.",
+	"Pero lo que más me gusta ver es un libro.",
+	"A mí me gusta el chocolate.",
+
+	"Que puedes hacer?",
+	"Yo puedo jugar en los columpios.",
+	"Yo puedo jugar con la pelota.",
+	"Yo puedo jugar con mis carritos.",
+	"Yo puedo jugar a las escondidas.",
+	"Yo puedo jugar con mi patín.",
+	"Yo puedo jugar en el tobogán.",
+	"Yo puedo jugar contigo.",
+
+	"Me gusta el pato amarillo.",
+	"Me gusta la pelota roja.",
+	"Me gusa el pavo café.",
+	"Me gusta el perro negro.",
+
+	"Qué puedes ver?",
+	"Yo puedo ver una cebra.",
+	"Yo puedo ver un camello.",
+	"Yo puedo ver un tiburón.",
+	"Yo puedo ver un hipopótamo.",
+	"Yo puedo ver una hiena.",
+	"Yo puedo ver un gorila.",
+	"Yo puedo ver muchos animales.",
+
+	"Hojas de otoño",
+	"Una hoja verde.",
+	"Una hoja roja.",
+	"Una hoja amarilla.",
+	"Una hoja anaranjada.",
+	"Una hoja café.",
+	"Hasta caer al suelo.",
+
+	"Tengo cuatro regalos.",
+	"Debajo del arbolito.",
+	"Uno es un círculo.",
+	"Qué está adentro?",
+	"Yo no sé.",
+	"Uno es un cuadrado.",
+	"Uno es un retángulo.",
+	"Uno es un triángulo.",
+	"Tengo cuatro regalos debajo del arbolito.",
+	"Todos son para mí!",
+
+	"Es una manzana roja.",
+	"Es una manzana verde.",
+	"Es una manzana blanca.",
+	"Es una manzana café.",
+
+	"Este payaso tiene el sombrero morado.",
+	"Este payaso tiene pelo verde.",
+	"Este payaso tiene la nariz roja.",
+	"Este payaso tiene la manos cafés.",
+	"Este payaso tiene el traje amarillo.",
+	"Este payaso tiene los zapatos azules.",
+	"Este es un payaso arco iris!",
+
+	"El pavo tiene una pluma roja.",
+	"El pavo tiene una pluma verde.",
+	"El pavo tiene una pluma anaranjada.",
+	"El pavo tiene una pluma azul.",
+	"El pavo tiene una pluma café.",
+	"El pavo tiene una pluma amarilla.",
+	"El pavo tiene una pluma morada.",
+	"Qué pavo más rico!",
+
+	"Yo veo la mariposa.",
+	"Me gusta la mariposa.",
+	"Yo veo el mango.",
+	"Me gusta el mango.",
+	"Yo veo el mono.",
+	"Me gusta el mono.",
+	"Yo veo la muñeca.",
+	"Me gusta la muñeca.",
+}
+
+var silabas = []string{
+	"pa", "pe", "pi", "po", "pu", "ma", "me", "mi", "mo", "mu",
 }
